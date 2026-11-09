@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>wgproxyrs</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>wgproxyrs</h1>
+    <div id="status" class="status down"><span class="dot"></span><span id="statusText">checking…</span></div>
+  </header>
+
+  <section id="activeBox" hidden>
+    <p>Active profile: <strong id="activeName"></strong></p>
+    <button id="disconnectBtn" class="danger">Disconnect</button>
+  </section>
+
+  <section>
+    <h2>Profiles</h2>
+    <ul id="profileList"></ul>
+    <p id="emptyHint" class="hint">No profiles yet. Import a WireGuard .conf below.</p>
+  </section>
+
+  <section>
+    <h2>Import .conf</h2>
+    <input type="file" id="fileInput" accept=".conf,.txt">
+    <div id="preview" hidden>
+      <p id="previewText" class="mono"></p>
+      <label>Profile name <input type="text" id="nameInput"></label>
+      <button id="importBtn">Import profile</button>
+    </div>
+  </section>
+
+  <p id="message" class="hint"></p>
+
+  <script src="config-parse.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

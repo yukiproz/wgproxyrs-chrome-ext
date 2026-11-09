@@ -1,0 +1,1 @@
+{"allowed_origins":["chrome-extension://nbnpddcaocfcbamihlibbgidlebajcbl/"],"description":"wgproxyrs native host","name":"com.wgproxyrs.host","path":"__BUNDLE_ROOT__\\native-host\\wgproxyrs-host.bat","type":"stdio"}

@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate extension + host scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: JavaScript syntax
+        run: |
+          node --check extension/config-parse.js
+          node --check extension/background.js
+          node --check extension/popup.js
+      - name: Config parser test
+        run: node tests/config-parse.test.mjs
+      - name: Manifest sanity (JSON, pinned extension ID from key)
+        run: |
+          python3 - <<'EOF'
+          import base64, hashlib, json
+          m = json.load(open("extension/manifest.json"))
+          assert m["manifest_version"] == 3
+          assert set(m["permissions"]) == {"proxy", "nativeMessaging", "storage"}, m["permissions"]
+          der = base64.b64decode(m["key"])
+          ext_id = "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(der).hexdigest()[:32])
+          assert ext_id == "nbnpddcaocfcbamihlibbgidlebajcbl", ext_id
+          print("manifest OK, extension id:", ext_id)
+          EOF
+      - name: PowerShell syntax (host + installers)
+        shell: pwsh
+        run: |
+          foreach ($f in @("native-host/wgproxyrs-host.ps1", "install.ps1", "uninstall.ps1")) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) { throw "$f : $($errors[0].Message)" }
+            Write-Host "parsed OK: $f"
+          }
+
+  host-test:
+    name: Native host smoke test (stub engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host protocol test
+        run: python3 tests/host_driver.py
+
+  bundle-windows:
+    name: Build self-contained Windows bundle (Edge)
+    needs: [validate, host-test]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v4
+        with:
+          path: ext
+      - name: Checkout wgproxyrs engine
+        uses: actions/checkout@v4
+        with:
+          repository: yukiproz/wgproxyrs
+          path: engine
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build wgproxyrs.exe
+        working-directory: engine
+        run: cargo build --release
+      - name: Smoke test the Windows binary
+        shell: pwsh
+        run: |
+          $bin = "engine/target/release/wgproxyrs.exe"
+          & $bin --version
+          @"
+          [Interface]
+          PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          Address = 10.99.0.2/32
+          [Peer]
+          PublicKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          Endpoint = 127.0.0.1:51820
+          AllowedIPs = 10.99.0.0/24
+          "@ | Set-Content -Path fixture.conf
+          & $bin --check fixture.conf
+      - name: Stage the self-contained bundle
+        shell: pwsh
+        run: |
+          $stage = "bundle/wgproxyrs-ext"
+          New-Item -ItemType Directory -Force -Path "$stage/bin", "$stage/native-host" | Out-Null
+          Copy-Item -Recurse ext/extension "$stage/extension"
+          Copy-Item ext/native-host/wgproxyrs-host.ps1, ext/native-host/wgproxyrs-host.bat, ext/native-host/com.wgproxyrs.host.json.template "$stage/native-host/"
+          Copy-Item ext/install.ps1, ext/uninstall.ps1, ext/README.md "$stage/"
+          Copy-Item engine/target/release/wgproxyrs.exe "$stage/bin/"
+          Get-ChildItem -Recurse $stage | Select-Object FullName
+      - name: Zip bundle
+        shell: pwsh
+        run: Compress-Archive -Path bundle/wgproxyrs-ext -DestinationPath wgproxyrs-ext-windows.zip
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wgproxyrs-ext-windows
+          path: wgproxyrs-ext-windows.zip
+          retention-days: 30
