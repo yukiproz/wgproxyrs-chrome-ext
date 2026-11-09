@@ -12,17 +12,28 @@
   </header>
 
   <p class="hint">Engine runs in WSL. Start it there first:</p>
-  <p class="mono box">wgproxyrs --config uner.conf --bind 127.0.0.1:1080 --http-bind 127.0.0.1:1081 --info-bind 127.0.0.1:1082</p>
+  <p class="mono box" id="cmdText"></p>
 
   <section>
-    <label class="radio"><input type="radio" name="mode" value="socks5" checked> SOCKS5 · 127.0.0.1:1080</label>
-    <label class="radio"><input type="radio" name="mode" value="http"> HTTP CONNECT · 127.0.0.1:1081</label>
+    <label class="radio"><input type="radio" name="mode" value="socks5" checked> SOCKS5 · 127.0.0.1:<span id="socksLabel">1080</span></label>
+    <label class="radio"><input type="radio" name="mode" value="http"> HTTP CONNECT · 127.0.0.1:<span id="httpLabel">1081</span></label>
   </section>
 
   <div class="row">
     <button id="connectBtn">Connect</button>
     <button id="disconnectBtn" class="danger">Disconnect</button>
   </div>
+
+  <section>
+    <h2>Ports (stored in the extension)</h2>
+    <div class="ports">
+      <label>SOCKS <input type="number" id="socksPort" min="1" max="65535"></label>
+      <label>HTTP <input type="number" id="httpPort" min="1" max="65535"></label>
+      <label>Status <input type="number" id="infoPort" min="1" max="65535"></label>
+      <button id="savePortsBtn">Save ports</button>
+    </div>
+    <p class="hint">Change them freely to match however you started wgproxyrs in WSL. If you are connected, new ports apply on the next Connect.</p>
+  </section>
 
   <p id="message" class="hint"></p>
   <p id="detail" class="mono"></p>

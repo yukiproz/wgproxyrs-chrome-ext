@@ -1,5 +1,6 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
+let portsLoaded = false;
 
 function send(msg) {
   return new Promise((resolve) => {
@@ -12,7 +13,22 @@ function send(msg) {
 
 function say(text) { $("message").textContent = text || ""; }
 
+function renderPorts(ports) {
+  if (!ports) return;
+  $("socksLabel").textContent = ports.socks5;
+  $("httpLabel").textContent = ports.http;
+  $("cmdText").textContent =
+    `wgproxyrs --config uner.conf --bind 127.0.0.1:${ports.socks5} --http-bind 127.0.0.1:${ports.http} --info-bind 127.0.0.1:${ports.info}`;
+  if (!portsLoaded) {
+    $("socksPort").value = ports.socks5;
+    $("httpPort").value = ports.http;
+    $("infoPort").value = ports.info;
+    portsLoaded = true;
+  }
+}
+
 function render(state) {
+  renderPorts(state.ports);
   const s = state.status || { state: "unreachable" };
   const box = $("status");
   box.className = "status " + (s.state === "up" ? "up" : s.state === "down" ? "down" : "unreachable");
@@ -25,7 +41,7 @@ function render(state) {
     if (d.handshake_age_secs !== undefined && d.handshake_age_secs !== null) parts.push(`handshake ${d.handshake_age_secs}s ago`);
     const peers = d.per_peer || d.peers;
     if (peers) parts.push(`${Array.isArray(peers) ? peers.length : peers} peer(s)`);
-    if (state.status && state.status.infoPort) parts.push(`info :${state.status.infoPort}`);
+    if (s.infoPort) parts.push(`info :${s.infoPort}`);
     $("detail").textContent = parts.join(" · ");
   } else {
     $("detail").textContent = s.detail || "";
@@ -52,6 +68,22 @@ $("disconnectBtn").addEventListener("click", async () => {
   const r = await send({ type: "disconnect" });
   say(r.ok ? "disconnected (wgproxyrs in WSL keeps running)" : r.error);
   await refresh();
+});
+
+$("savePortsBtn").addEventListener("click", async () => {
+  const ports = {
+    socks5: Number($("socksPort").value),
+    http: Number($("httpPort").value),
+    info: Number($("infoPort").value),
+  };
+  const r = await send({ type: "savePorts", ports });
+  if (r.ok) {
+    portsLoaded = false;
+    say(`ports saved: SOCKS ${ports.socks5} · HTTP ${ports.http} · status ${ports.info}`);
+    await refresh();
+  } else {
+    say(r.error);
+  }
 });
 
 refresh();

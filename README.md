@@ -5,7 +5,7 @@ userspace WireGuard client in Rust that exposes a local SOCKS5/HTTP proxy.
 Target browser: **Microsoft Edge on Windows**, with the engine running in
 **WSL** on the same machine.
 
-Current version: **v0.2.0** (the WSL-localhost edition).
+Current version: **v0.3.0** (the WSL-localhost edition, configurable ports).
 
 ## How it works — deliberately simple
 
@@ -24,10 +24,12 @@ Edge (Windows)                              WSL
 └─────────────────────────────┘            └──────────────────────────┘
 ```
 
-Ports are the tidy convention on Hadi's machine: SOCKS5 **1080**,
-HTTP **1081**, status **1082**. (The status probe also tries the legacy
-**1182** — Yuki's earlier example commands used it, so older running
-instances still answer there. New instances should use 1082.)
+Default ports are the tidy sequence: SOCKS5 **1080**, HTTP **1081**,
+status **1082** — but all three are **configurable in the popup** and
+persisted in the extension, so they can match however you started
+wgproxyrs in WSL. The status probe tries the configured port first,
+then the legacy **1182** (from Yuki's earlier example commands) so
+older running instances still answer.
 
 ## Use
 

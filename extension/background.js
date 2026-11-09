@@ -13,15 +13,29 @@
 // set/clear the WebRTC leak policy, and poll the status endpoint.
 // Starting/stopping wgproxyrs itself happens in WSL, by the user.
 
-const PORTS = { socks5: 1080, http: 1081 };
-// The status port is probed, not assumed. Canonical is 1082 (the tidy
-// 1080/1081/1082 sequence Hadi settled on); 1182 is probed as a legacy
-// fallback because Yuki's own earlier example commands used it and
-// instances started from those are still around.
-const INFO_PORTS = [1082, 1182];
+// All three ports are user-configurable in the popup and persisted in
+// chrome.storage.local. Defaults are the tidy sequence.
+const DEFAULT_PORTS = { socks5: 1080, http: 1081, info: 1082 };
+
+function validPort(n) { return Number.isInteger(n) && n >= 1 && n <= 65535; }
+
+async function getPorts() {
+  const stored = await chrome.storage.local.get(['wgPorts']);
+  const ports = { ...DEFAULT_PORTS, ...(stored.wgPorts || {}) };
+  for (const k of Object.keys(DEFAULT_PORTS)) if (!validPort(ports[k])) ports[k] = DEFAULT_PORTS[k];
+  return ports;
+}
+
+// The status port is probed, not assumed: the configured port first,
+// then legacy fallbacks (1182 came from Yuki's earlier example commands;
+// instances started from those are still around).
+function infoCandidates(ports) {
+  return [...new Set([ports.info, 1182, 1082])];
+}
 
 async function fetchStatus() {
-  for (const port of INFO_PORTS) {
+  const ports = await getPorts();
+  for (const port of infoCandidates(ports)) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 1200);
     try {
@@ -36,13 +50,13 @@ async function fetchStatus() {
       clearTimeout(timer);
     }
   }
-  return { ok: true, state: "unreachable", detail: `wgproxyrs not reachable on 127.0.0.1:${INFO_PORTS.join(" or ")}` };
+  return { ok: true, state: "unreachable", detail: `wgproxyrs not reachable (info ports tried: ${infoCandidates(ports).join(", ")})` };
 }
 
-function setProxy(mode) {
+function setProxy(mode, ports) {
   const proxy = mode === "http"
-    ? { scheme: "http", host: "127.0.0.1", port: PORTS.http }
-    : { scheme: "socks5", host: "127.0.0.1", port: PORTS.socks5 };
+    ? { scheme: "http", host: "127.0.0.1", port: ports.http }
+    : { scheme: "socks5", host: "127.0.0.1", port: ports.socks5 };
   return new Promise((resolve) => {
     chrome.proxy.settings.set(
       {
@@ -74,7 +88,7 @@ function setWebRtcPolicy(value) {
 async function getState() {
   const stored = await chrome.storage.local.get(["wgConnected", "wgMode"]);
   const status = await fetchStatus();
-  return { ok: true, connected: !!stored.wgConnected, mode: stored.wgMode || "socks5", status };
+  return { ok: true, connected: !!stored.wgConnected, mode: stored.wgMode || "socks5", ports: await getPorts(), status };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -84,10 +98,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const mode = msg.mode === "http" ? "http" : "socks5";
         const status = await fetchStatus();
         if (status.state === "unreachable") {
-          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL (status port 1082/1182). Start it in WSL first.", status });
+          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL on the configured info port. Start it in WSL first, or fix the ports below.", status });
           break;
         }
-        await setProxy(mode);
+        await setProxy(mode, await getPorts());
         await setWebRtcPolicy("disable_non_proxied_udp");
         await chrome.storage.local.set({ wgConnected: true, wgMode: mode });
         sendResponse({ ok: true, status: await fetchStatus() });
@@ -98,6 +112,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await setWebRtcPolicy("default");
         await chrome.storage.local.set({ wgConnected: false });
         sendResponse({ ok: true, status: await fetchStatus() });
+        break;
+      }
+      case "savePorts": {
+        const incoming = msg.ports || {};
+        const ports = {};
+        for (const k of ["socks5", "http", "info"]) {
+          const n = Number(incoming[k]);
+          if (!validPort(n)) { sendResponse({ ok: false, error: `invalid port for ${k}: ${incoming[k]}` }); return; }
+          ports[k] = n;
+        }
+        await chrome.storage.local.set({ wgPorts: ports });
+        sendResponse(await getState());
         break;
       }
       case "state":
