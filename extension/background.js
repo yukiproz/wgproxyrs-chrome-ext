@@ -1,40 +1,46 @@
 "use strict";
-// Background service worker: owns the browser proxy setting and all
-// Native Messaging calls to the wgproxyrs host (com.wgproxyrs.host).
-// One-shot sendNativeMessage is used on purpose: the host process exits
-// after each reply, while the wgproxyrs daemon it launches keeps running.
+// Background service worker (v0.2 - WSL localhost edition).
+//
+// wgproxyrs runs in WSL on the same machine. WSL2 exposes services bound to
+// localhost inside WSL as localhost on Windows, so this Edge instance can
+// reach the engine directly - no native messaging host, no Windows binary:
+//
+//   SOCKS5 proxy  127.0.0.1:1080
+//   HTTP proxy    127.0.0.1:1081
+//   Status (JSON) 127.0.0.1:1082
+//
+// The extension only does three things: set/clear the browser proxy,
+// set/clear the WebRTC leak policy, and poll the status endpoint.
+// Starting/stopping wgproxyrs itself happens in WSL, by the user.
 
-const HOST = "com.wgproxyrs.host";
-const PROXY = { scheme: "socks5", host: "127.0.0.1", port: 1080 };
+const PORTS = { socks5: 1080, http: 1081, info: 1082 };
+const INFO_URL = `http://127.0.0.1:${PORTS.info}/`;
 
-function native(message) {
-  return new Promise((resolve) => {
-    try {
-      chrome.runtime.sendNativeMessage(HOST, message, (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({ ok: false, error: "native host unreachable: " + chrome.runtime.lastError.message });
-        } else {
-          resolve(response || { ok: false, error: "empty response from native host" });
-        }
-      });
-    } catch (e) {
-      resolve({ ok: false, error: String(e) });
-    }
-  });
+async function fetchStatus() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 1500);
+  try {
+    const res = await fetch(INFO_URL, { cache: "no-store", signal: ctrl.signal });
+    if (!res.ok) return { ok: true, state: "unreachable", detail: `HTTP ${res.status}` };
+    const body = await res.json().catch(() => ({}));
+    const state = body.status || body.state || "unknown";
+    return { ok: true, state, detail: body };
+  } catch (_e) {
+    return { ok: true, state: "unreachable", detail: "wgproxyrs not reachable on 127.0.0.1:" + PORTS.info };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-function setProxy() {
+function setProxy(mode) {
+  const proxy = mode === "http"
+    ? { scheme: "http", host: "127.0.0.1", port: PORTS.http }
+    : { scheme: "socks5", host: "127.0.0.1", port: PORTS.socks5 };
   return new Promise((resolve) => {
     chrome.proxy.settings.set(
       {
         scope: "regular",
-        value: {
-          mode: "fixed_servers",
-          rules: {
-            singleProxy: PROXY,
-            bypassList: ["localhost", "127.0.0.1"],
-          },
-        },
+        value: { mode: "fixed_servers", rules: { singleProxy: proxy, bypassList: ["localhost", "127.0.0.1"] } },
       },
       () => resolve(!chrome.runtime.lastError)
     );
@@ -48,8 +54,7 @@ function clearProxy() {
 }
 
 // WebRTC can bypass a SOCKS proxy over UDP and leak the real IP. While
-// connected, force it onto proxied paths only (the same leak protection
-// commercial VPN extensions ship); restore the default on disconnect.
+// connected, force it onto proxied paths only; restore on disconnect.
 function setWebRtcPolicy(value) {
   return new Promise((resolve) => {
     if (!chrome.privacy || !chrome.privacy.network.webRTCIPHandlingPolicy) return resolve(false);
@@ -59,58 +64,55 @@ function setWebRtcPolicy(value) {
   });
 }
 
+async function getState() {
+  const stored = await chrome.storage.local.get(["wgConnected", "wgMode"]);
+  const status = await fetchStatus();
+  return { ok: true, connected: !!stored.wgConnected, mode: stored.wgMode || "socks5", status };
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     switch (msg && msg.type) {
-      case "list":
-        sendResponse(await native({ cmd: "list" }));
-        break;
-      case "import":
-        sendResponse(await native({ cmd: "import", name: msg.name, configText: msg.configText }));
-        break;
-      case "delete":
-        sendResponse(await native({ cmd: "delete", name: msg.name }));
-        break;
       case "connect": {
-        const started = await native({ cmd: "start", name: msg.name });
-        if (!started.ok) {
-          sendResponse(started);
+        const mode = msg.mode === "http" ? "http" : "socks5";
+        const status = await fetchStatus();
+        if (status.state === "unreachable") {
+          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL (status port 1082). Start it in WSL first.", status });
           break;
         }
-        // Set the proxy only after the daemon process exists. wgproxyrs is
-        // fail-closed: while the tunnel is down its proxy refuses traffic
-        // instead of leaking it outside the tunnel.
-        await setProxy();
+        await setProxy(mode);
         await setWebRtcPolicy("disable_non_proxied_udp");
-        const status = await native({ cmd: "status" });
-        sendResponse({ ok: true, status });
+        await chrome.storage.local.set({ wgConnected: true, wgMode: mode });
+        sendResponse({ ok: true, status: await fetchStatus() });
         break;
       }
       case "disconnect": {
-        // Clear the browser proxy FIRST so the browser never points at a
-        // proxy that is about to disappear, then stop the daemon.
         await clearProxy();
         await setWebRtcPolicy("default");
-        sendResponse(await native({ cmd: "stop" }));
+        await chrome.storage.local.set({ wgConnected: false });
+        sendResponse({ ok: true, status: await fetchStatus() });
         break;
       }
-      case "status":
-        sendResponse(await native({ cmd: "status" }));
+      case "state":
+        sendResponse(await getState());
         break;
       default:
         sendResponse({ ok: false, error: "unknown message type" });
     }
   })();
-  return true; // keep the message channel open for the async reply
+  return true;
 });
 
-// If the browser starts with a stale proxy pointing at a dead daemon,
-// traffic would fail (fail-closed), not leak. We still clear it when the
-// host reports no daemon running, as a convenience.
+// On browser startup, if our proxy flag is set but WSL wgproxyrs is gone,
+// clear the stale proxy so the browser is not stranded on a dead proxy
+// (wgproxyrs is fail-closed, so this is convenience, not leak protection).
 chrome.runtime.onStartup.addListener(async () => {
-  const status = await native({ cmd: "status" });
-  if (!status.ok || status.state === "unreachable") {
+  const stored = await chrome.storage.local.get(["wgConnected"]);
+  if (!stored.wgConnected) return;
+  const status = await fetchStatus();
+  if (status.state === "unreachable") {
     await clearProxy();
     await setWebRtcPolicy("default");
+    await chrome.storage.local.set({ wgConnected: false });
   }
 });

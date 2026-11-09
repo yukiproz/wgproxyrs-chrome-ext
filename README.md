@@ -1,104 +1,70 @@
-# wgproxyrs-chrome-ext (DRAFT)
+# wgproxyrs-chrome-ext
 
 A browser face for [wgproxyrs](https://github.com/yukiproz/wgproxyrs) — the
 userspace WireGuard client in Rust that exposes a local SOCKS5/HTTP proxy.
-Target browser: **Microsoft Edge on Windows** (the same MV3 code also loads in
-Chromium/Chrome).
+Target browser: **Microsoft Edge on Windows**, with the engine running in
+**WSL** on the same machine.
 
-Status: **draft v0.1.0** — scaffold + working plumbing, not a polished product.
+Current version: **v0.2.0** (the WSL-localhost edition).
 
-## Why the extension cannot be self-contained on its own
+## How it works — deliberately simple
 
-A pure browser extension **cannot** speak WireGuard:
-
-- WireGuard's transport is **UDP**. MV3 extensions get no raw UDP sockets —
-  not directly, and not via WebAssembly either.
-- An extension package also cannot ship and execute a native binary; the
-  browser sandbox forbids running bundled executables.
-
-So every real product in this class uses the same split, and so do we:
+WSL2 exposes services bound to localhost inside WSL as `localhost` on
+Windows. wgproxyrs already runs in WSL, so Edge can reach it directly.
+No native messaging host, no Windows build of the engine, no installer:
 
 ```
-Edge popup (face) --Native Messaging--> PowerShell host --starts--> wgproxyrs.exe
-       |                                                              |
-       +-- chrome.proxy: SOCKS5 127.0.0.1:1080 <----------------------+
-       Only this browser's traffic rides the tunnel. Nothing system-wide changes.
+Edge (Windows)                              WSL
+┌─────────────────────────────┐            ┌──────────────────────────┐
+│ extension                   │  proxy     │ wgproxyrs                │
+│  - Connect: set proxy ──────┼──127.0.0.1:1080 (SOCKS5)           │
+│                             ├──127.0.0.1:1081 (HTTP CONNECT)     │
+│  - Status: GET / ───────────┼──127.0.0.1:1082 (health JSON)      │
+│  - WebRTC leak policy on    │            │   tunnel to your .conf   │
+└─────────────────────────────┘            └──────────────────────────┘
 ```
 
-**The self-contained unit is the bundle, not the extension.** GitHub Actions
-builds `wgproxyrs.exe` from source and packs one zip:
+Ports are the standing convention on Hadi's machine: SOCKS5 **1080**,
+HTTP **1081**, status **1082**.
 
-```
-wgproxyrs-ext\
-  extension\      MV3 extension (load unpacked, once)
-  bin\wgproxyrs.exe
-  native-host\    PowerShell host + manifest template
-  install.ps1     registers the native host for Edge (HKCU, per-user)
-  uninstall.ps1
-  profiles\       your imported .conf files (created on first import)
-  state\          active profile + logs (created on first connect)
-```
+## Use
 
-No separate wgproxyrs install, no Python, no admin rights. PowerShell 5.1
-ships with Windows and runs the host.
+1. In WSL, start the engine (config and profile management live here —
+   multi-profile just means running the instance you want):
 
-## Install (Windows, Edge)
+   ```bash
+   wgproxyrs --config uner.conf --bind 127.0.0.1:1080 --http-bind 127.0.0.1:1081 --info-bind 127.0.0.1:1082
+   ```
 
-1. Download the `wgproxyrs-ext-windows` artifact from the latest green
-   [Actions run](../../actions) and unzip it where you want to keep it
-   (the folder is portable — profiles and state live inside it).
-2. In the unzipped folder:
-   `powershell -ExecutionPolicy Bypass -File .\install.ps1`
-3. In Edge: `edge://extensions` → Developer mode → **Load unpacked** →
-   select the `extension` folder. The extension ID is pinned by the
-   manifest `key` to `nbnpddcaocfcbamihlibbgidlebajcbl`, which is what
-   `install.ps1` registers the native host for.
-4. Click the wgproxyrs icon, import a `.conf`, pick the profile, **Connect**.
-5. Disconnect from the popup when done. To remove everything, run
-   `uninstall.ps1` and remove the extension in `edge://extensions`.
+2. In Edge: `edge://extensions` → Developer mode → **Load unpacked** →
+   select this repo's `extension/` folder (or unzip the CI artifact).
+3. Click the wgproxyrs icon. The popup shows the tunnel state from the
+   status endpoint. Pick SOCKS5 (1080) or HTTP (1081) and **Connect** —
+   the extension sets Edge's proxy and disables non-proxied WebRTC UDP
+   (`disable_non_proxied_udp`) so WebRTC cannot leak around the proxy.
+4. **Disconnect** clears Edge's proxy and restores the WebRTC default.
+   wgproxyrs in WSL keeps running; stop it there when you are done.
 
-## Key hygiene
+If the engine is not reachable, Connect refuses with an explanation
+instead of pointing the browser at a dead proxy. If Edge restarts while
+connected and the engine is gone, the stale proxy is cleared on startup.
+wgproxyrs itself is fail-closed, so a down tunnel refuses traffic rather
+than leaking it outside the tunnel.
 
-- `.conf` files contain a **private key**. Imported profiles are stored as
-  plain files in the bundle's `profiles\` folder and **stay there until you
-  delete them manually** (popup Delete button, or delete the file) — that is
-  a deliberate, simple choice for this draft. Protect the bundle folder like
-  any other key material.
-- The private key is **never** stored in `chrome.storage`, never shown in
-  the popup, and never included in any native-host response (the host test
-  in CI asserts this).
-- Disconnect never deletes a profile. Deleting the *active* profile is
-  refused until you disconnect.
+## What the extension cannot do (by design)
 
-## What works in this draft vs what is stubbed
-
-Works: multi-profile import/list/delete, config summary parsing (endpoint,
-AllowedIPs, address, DNS), connect/disconnect, browser proxy set/clear,
-status polling (`wgproxyrs status --info 127.0.0.1:1182`, exit 0 up /
-1 down / 2 unreachable), persistent profiles, fail-closed behaviour inherited
-from wgproxyrs (tunnel down ⇒ proxy refuses traffic instead of leaking it).
-
-Stubbed / not yet: no auto-reconnect, no tray/icon state changes, no
-Edge Add-ons packaging or signing, no in-extension binary updates, Linux
-native-host install is not wired up (the PowerShell host also runs under
-`pwsh` on Linux, which is how CI tests it, but the Windows/Edge path is the
-supported one).
-
-## Open questions
-
-- Should profiles eventually be encrypted at rest, or is folder-level trust
-  acceptable long-term?
-- One active profile at a time is assumed. Is concurrent multi-tunnel ever
-  wanted?
-- When wgproxyrs ships a new version, should the bundle update the exe in
-  place, or stay a fresh-download model?
+- Start/stop wgproxyrs or manage `.conf` files — that stays in WSL,
+  where the engine and configs already live. This is the same split as
+  the well-known VPN extensions (see DESIGN.md's prior-art audit):
+  extension = face + proxy switch, native side = tunnel.
+- A pure extension could never speak WireGuard anyway (no UDP in MV3);
+  v0.1 of this repo explored the Native Messaging route for WSL-less
+  Windows machines. That work is kept in `attic/` for reference.
 
 ## Development
 
-- `node tests/config-parse.test.mjs` — popup parser test.
-- `python3 tests/host_driver.py` — full native-host protocol test against a
-  stub engine (needs `pwsh` or `powershell`).
-- CI (`.github/workflows/ci.yml`): validation + host test on Ubuntu, then a
-  Windows job that builds `wgproxyrs.exe` from `yukiproz/wgproxyrs`, smoke
-  tests it, and uploads the self-contained bundle zip as an artifact.
-  Binaries are CI artifacts, never committed to this repo.
+- `node tests/manifest.test.mjs` — manifest contract (notably: **no**
+  `nativeMessaging` permission; the only host permission is the status
+  endpoint).
+- CI (`.github/workflows/ci.yml`): syntax + manifest validation, then a
+  zipped extension artifact (`wgproxyrs-ext`).

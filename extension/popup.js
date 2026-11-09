@@ -1,6 +1,5 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
-let pendingImport = null; // { name, text } held in popup memory only until imported
 
 function send(msg) {
   return new Promise((resolve) => {
@@ -13,83 +12,44 @@ function send(msg) {
 
 function say(text) { $("message").textContent = text || ""; }
 
-async function refreshStatus() {
-  const s = await send({ type: "status" });
+function render(state) {
+  const s = state.status || { state: "unreachable" };
   const box = $("status");
-  box.className = "status " + (s.state || "unreachable");
-  $("statusText").textContent = s.ok
-    ? `tunnel ${s.state}${s.activeProfile ? " · " + s.activeProfile : ""}`
-    : s.error || "host unreachable";
-  $("activeBox").hidden = !(s.ok && s.activeProfile);
-  if (s.activeProfile) $("activeName").textContent = s.activeProfile;
-  return s;
-}
-
-async function refreshProfiles() {
-  const res = await send({ type: "list" });
-  const list = $("profileList");
-  list.textContent = "";
-  if (!res.ok) { say(res.error); $("emptyHint").hidden = true; return; }
-  $("emptyHint").hidden = res.profiles.length > 0;
-  for (const p of res.profiles) {
-    const li = document.createElement("li");
-    li.className = "profile";
-    const meta = p.peers.map((x) => `${x.endpoint || "?"} → ${x.allowedIPs.join(", ")}`).join(" · ");
-    li.innerHTML = "";
-    const name = document.createElement("div"); name.className = "name"; name.textContent = p.name;
-    const m = document.createElement("div"); m.className = "meta"; m.textContent = meta || "no peers";
-    const row = document.createElement("div"); row.className = "row";
-    const connect = document.createElement("button"); connect.textContent = "Connect";
-    connect.addEventListener("click", async () => {
-      say("starting…");
-      const r = await send({ type: "connect", name: p.name });
-      say(r.ok ? "connected (proxy set; tunnel state shown above)" : r.error);
-      await refreshStatus();
-    });
-    const del = document.createElement("button"); del.textContent = "Delete"; del.className = "danger";
-    del.addEventListener("click", async () => {
-      const r = await send({ type: "delete", name: p.name });
-      say(r.ok ? `deleted ${p.name}` : r.error);
-      await refreshProfiles(); await refreshStatus();
-    });
-    row.append(connect, del);
-    li.append(name, m, row);
-    list.appendChild(li);
+  box.className = "status " + (s.state === "up" ? "up" : s.state === "down" ? "down" : "unreachable");
+  $("statusText").textContent =
+    s.state === "unreachable" ? "engine unreachable in WSL" : `tunnel ${s.state}${state.connected ? " · browser connected" : ""}`;
+  if (s.detail && typeof s.detail === "object") {
+    const d = s.detail;
+    const parts = [];
+    if (d.handshake_age_secs !== undefined) parts.push(`handshake ${d.handshake_age_secs}s ago`);
+    if (d.peers) parts.push(`${Array.isArray(d.peers) ? d.peers.length : d.peers} peer(s)`);
+    $("detail").textContent = parts.join(" · ");
+  } else {
+    $("detail").textContent = s.detail || "";
   }
+  const radio = document.querySelector(`input[name="mode"][value="${state.mode || "socks5"}"]`);
+  if (radio) radio.checked = true;
 }
 
-$("fileInput").addEventListener("change", async (ev) => {
-  const file = ev.target.files[0];
-  if (!file) return;
-  const text = await file.text();
-  const parsed = parseConfigText(text);
-  pendingImport = { text };
-  $("nameInput").value = file.name.replace(/\.conf$/i, "");
-  const peerLines = parsed.peers.map((p) => `peer ${p.endpoint || "?"} → ${p.allowedIPs.join(", ")}`).join("\n");
-  $("previewText").textContent =
-    `address: ${parsed.address.join(", ") || "-"}\ndns: ${parsed.dns.join(", ") || "-"}\n` +
-    `private key: ${parsed.hasPrivateKey ? "present (never shown)" : "MISSING"}\n${peerLines}`;
-  $("preview").hidden = false;
-});
+async function refresh() {
+  const state = await send({ type: "state" });
+  if (state.ok) render(state);
+  else say(state.error);
+}
 
-$("importBtn").addEventListener("click", async () => {
-  if (!pendingImport) return;
-  const name = $("nameInput").value.trim();
-  if (!name) { say("profile name required"); return; }
-  const r = await send({ type: "import", name, configText: pendingImport.text });
-  pendingImport = null;
-  $("preview").hidden = true;
-  $("fileInput").value = "";
-  say(r.ok ? `imported ${name} — file kept in the bundle's profiles folder` : r.error);
-  await refreshProfiles();
+$("connectBtn").addEventListener("click", async () => {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  say("connecting…");
+  const r = await send({ type: "connect", mode });
+  say(r.ok ? `browser traffic now goes through the WSL tunnel (${mode})` : r.error);
+  await refresh();
 });
 
 $("disconnectBtn").addEventListener("click", async () => {
   const r = await send({ type: "disconnect" });
-  say(r.ok ? "disconnected (profile file kept)" : r.error);
-  await refreshStatus();
+  say(r.ok ? "disconnected (wgproxyrs in WSL keeps running)" : r.error);
+  await refresh();
 });
 
-refreshProfiles();
-refreshStatus();
-setInterval(refreshStatus, 3000);
+refresh();
+setInterval(refresh, 3000);

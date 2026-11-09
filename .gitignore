@@ -1,8 +1,4 @@
 # Real WireGuard configs contain private keys - never commit them.
 *.conf
-!extension/*.conf
-profiles/
-state/
-bin/
 *.zip
-native-host/com.wgproxyrs.host.json
+dist/

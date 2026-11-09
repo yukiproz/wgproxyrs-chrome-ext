@@ -1,6 +1,22 @@
-# DESIGN — wgproxyrs browser extension (draft)
+# DESIGN — wgproxyrs browser extension
 
-## The UDP wall
+## v0.2 pivot (2026-11-09): the engine is in WSL, the browser just points at it
+
+Hadi's setup made v0.1's standalone-Windows machinery unnecessary: his
+Edge is on Windows, but wgproxyrs already runs in his WSL on the same
+machine, and WSL2 forwards WSL localhost services to Windows localhost.
+So v0.2 deletes the native host from the live path and the extension
+talks to the engine's own ports directly — SOCKS5 1080, HTTP 1081,
+status 1082 (his standing port convention). The extension is now only:
+proxy set/clear, WebRTC leak policy, status polling. Engine lifecycle
+and `.conf` management stay in WSL. The v0.1 bundle (PowerShell native
+host, Windows exe, installers) lives in `attic/` for the WSL-less case.
+Everything below is the v0.1 design record and the prior-art audit,
+kept because the platform reasoning still stands.
+
+---
+
+## The UDP wall (v0.1 design record)
 
 WireGuard = encrypted UDP packets to the peer endpoint. A browser extension
 (MV3, Edge/Chromium/Chrome alike) has: no raw sockets, no UDP sockets, no

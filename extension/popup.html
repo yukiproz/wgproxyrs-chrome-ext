@@ -8,33 +8,25 @@
 <body>
   <header>
     <h1>wgproxyrs</h1>
-    <div id="status" class="status down"><span class="dot"></span><span id="statusText">checking…</span></div>
+    <div id="status" class="status unreachable"><span class="dot"></span><span id="statusText">checking…</span></div>
   </header>
 
-  <section id="activeBox" hidden>
-    <p>Active profile: <strong id="activeName"></strong></p>
+  <p class="hint">Engine runs in WSL. Start it there first:</p>
+  <p class="mono box">wgproxyrs --config uner.conf --bind 127.0.0.1:1080 --http-bind 127.0.0.1:1081 --info-bind 127.0.0.1:1082</p>
+
+  <section>
+    <label class="radio"><input type="radio" name="mode" value="socks5" checked> SOCKS5 · 127.0.0.1:1080</label>
+    <label class="radio"><input type="radio" name="mode" value="http"> HTTP CONNECT · 127.0.0.1:1081</label>
+  </section>
+
+  <div class="row">
+    <button id="connectBtn">Connect</button>
     <button id="disconnectBtn" class="danger">Disconnect</button>
-  </section>
-
-  <section>
-    <h2>Profiles</h2>
-    <ul id="profileList"></ul>
-    <p id="emptyHint" class="hint">No profiles yet. Import a WireGuard .conf below.</p>
-  </section>
-
-  <section>
-    <h2>Import .conf</h2>
-    <input type="file" id="fileInput" accept=".conf,.txt">
-    <div id="preview" hidden>
-      <p id="previewText" class="mono"></p>
-      <label>Profile name <input type="text" id="nameInput"></label>
-      <button id="importBtn">Import profile</button>
-    </div>
-  </section>
+  </div>
 
   <p id="message" class="hint"></p>
+  <p id="detail" class="mono"></p>
 
-  <script src="config-parse.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
