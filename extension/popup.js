@@ -27,8 +27,22 @@ function renderPorts(ports) {
   }
 }
 
+function renderApplied(state) {
+  if (!state.ports) return;
+  const lines = [`✓ Set in system — SOCKS :${state.ports.socks5} · HTTP :${state.ports.http} · Status :${state.ports.info}`];
+  if (state.proxyInfo) {
+    lines.push(state.proxyInfo.proxy
+      ? `Browser proxy now: ${state.proxyInfo.proxy} (${state.proxyInfo.levelOfControl})`
+      : `Browser proxy: ${state.proxyInfo.mode} (${state.proxyInfo.levelOfControl})`);
+  }
+  const box = $("appliedBox");
+  box.textContent = lines.join("\n");
+  box.hidden = false;
+}
+
 function render(state) {
   renderPorts(state.ports);
+  renderApplied(state);
   const s = state.status || { state: "unreachable" };
   const box = $("status");
   box.className = "status " + (s.state === "up" ? "up" : s.state === "down" ? "down" : "unreachable");
@@ -70,16 +84,19 @@ $("disconnectBtn").addEventListener("click", async () => {
   await refresh();
 });
 
-$("savePortsBtn").addEventListener("click", async () => {
+$("setPortsBtn").addEventListener("click", async () => {
   const ports = {
     socks5: Number($("socksPort").value),
     http: Number($("httpPort").value),
     info: Number($("infoPort").value),
   };
+  say("setting…");
   const r = await send({ type: "savePorts", ports });
   if (r.ok) {
     portsLoaded = false;
-    say(`ports saved: SOCKS ${ports.socks5} · HTTP ${ports.http} · status ${ports.info}`);
+    const probe = r.status ? (r.status.state === "unreachable" ? "engine not answering yet on the new status port" : `engine answered: tunnel ${r.status.state} via :${r.status.infoPort}`) : "";
+    say(`ports set and verified from the system. ${probe}`);
+    render(r);
     await refresh();
   } else {
     say(r.error);

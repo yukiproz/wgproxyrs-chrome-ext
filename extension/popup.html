@@ -30,9 +30,10 @@
       <label>SOCKS <input type="number" id="socksPort" min="1" max="65535"></label>
       <label>HTTP <input type="number" id="httpPort" min="1" max="65535"></label>
       <label>Status <input type="number" id="infoPort" min="1" max="65535"></label>
-      <button id="savePortsBtn">Save ports</button>
+      <button id="setPortsBtn"><strong>Set ports</strong></button>
     </div>
-    <p class="hint">Change them freely to match however you started wgproxyrs in WSL. If you are connected, new ports apply on the next Connect.</p>
+    <p class="hint">Fill the ports, press <strong>Set ports</strong>, and check the confirmation below — it is read back from the system, not from the form.</p>
+    <p id="appliedBox" class="mono box" hidden></p>
   </section>
 
   <p id="message" class="hint"></p>

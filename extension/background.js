@@ -85,10 +85,27 @@ function setWebRtcPolicy(value) {
   });
 }
 
+// Read back what the browser proxy ACTUALLY is right now, so the popup can
+// show the user the system state - not just what we intended to set.
+function getProxyInfo() {
+  return new Promise((resolve) => {
+    chrome.proxy.settings.get({ incognito: false }, (config) => {
+      if (chrome.runtime.lastError || !config) return resolve(null);
+      const v = config.value || {};
+      const single = v.rules && v.rules.singleProxy;
+      resolve({
+        mode: v.mode || "system",
+        levelOfControl: config.levelOfControl || "unknown",
+        proxy: single ? `${single.scheme}://${single.host}:${single.port}` : null,
+      });
+    });
+  });
+}
+
 async function getState() {
   const stored = await chrome.storage.local.get(["wgConnected", "wgMode"]);
   const status = await fetchStatus();
-  return { ok: true, connected: !!stored.wgConnected, mode: stored.wgMode || "socks5", ports: await getPorts(), status };
+  return { ok: true, connected: !!stored.wgConnected, mode: stored.wgMode || "socks5", ports: await getPorts(), status, proxyInfo: await getProxyInfo() };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -123,7 +140,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           ports[k] = n;
         }
         await chrome.storage.local.set({ wgPorts: ports });
-        sendResponse(await getState());
+        // Set means SET: read the values back from storage, re-apply the
+        // browser proxy if currently connected, probe the engine on the
+        // new status port, and report the effective system state so the
+        // user can see it actually took - not just that a form was saved.
+        const appliedPorts = await getPorts();
+        const conn = await chrome.storage.local.get(["wgConnected", "wgMode"]);
+        if (conn.wgConnected) {
+          await setProxy(conn.wgMode || "socks5", appliedPorts);
+          await setWebRtcPolicy("disable_non_proxied_udp");
+        }
+        sendResponse({ ok: true, appliedPorts, status: await fetchStatus(), proxyInfo: await getProxyInfo(), ports: appliedPorts, connected: !!conn.wgConnected, mode: conn.wgMode || "socks5" });
         break;
       }
       case "state":
