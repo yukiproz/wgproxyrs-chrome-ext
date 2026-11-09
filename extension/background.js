@@ -47,6 +47,18 @@ function clearProxy() {
   });
 }
 
+// WebRTC can bypass a SOCKS proxy over UDP and leak the real IP. While
+// connected, force it onto proxied paths only (the same leak protection
+// commercial VPN extensions ship); restore the default on disconnect.
+function setWebRtcPolicy(value) {
+  return new Promise((resolve) => {
+    if (!chrome.privacy || !chrome.privacy.network.webRTCIPHandlingPolicy) return resolve(false);
+    chrome.privacy.network.webRTCIPHandlingPolicy.set({ value, scope: "regular" }, () =>
+      resolve(!chrome.runtime.lastError)
+    );
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     switch (msg && msg.type) {
@@ -69,6 +81,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // fail-closed: while the tunnel is down its proxy refuses traffic
         // instead of leaking it outside the tunnel.
         await setProxy();
+        await setWebRtcPolicy("disable_non_proxied_udp");
         const status = await native({ cmd: "status" });
         sendResponse({ ok: true, status });
         break;
@@ -77,6 +90,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // Clear the browser proxy FIRST so the browser never points at a
         // proxy that is about to disappear, then stop the daemon.
         await clearProxy();
+        await setWebRtcPolicy("default");
         sendResponse(await native({ cmd: "stop" }));
         break;
       }
@@ -95,5 +109,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // host reports no daemon running, as a convenience.
 chrome.runtime.onStartup.addListener(async () => {
   const status = await native({ cmd: "status" });
-  if (!status.ok || status.state === "unreachable") await clearProxy();
+  if (!status.ok || status.state === "unreachable") {
+    await clearProxy();
+    await setWebRtcPolicy("default");
+  }
 });

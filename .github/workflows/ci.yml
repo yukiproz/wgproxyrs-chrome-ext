@@ -28,7 +28,7 @@ jobs:
           import base64, hashlib, json
           m = json.load(open("extension/manifest.json"))
           assert m["manifest_version"] == 3
-          assert set(m["permissions"]) == {"proxy", "nativeMessaging", "storage"}, m["permissions"]
+          assert set(m["permissions"]) == {"proxy", "nativeMessaging", "storage", "privacy"}, m["permissions"]
           der = base64.b64decode(m["key"])
           ext_id = "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(der).hexdigest()[:32])
           assert ext_id == "nbnpddcaocfcbamihlibbgidlebajcbl", ext_id

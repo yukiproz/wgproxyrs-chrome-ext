@@ -61,6 +61,50 @@ for this draft and intentionally **not** committed or retained; ID stability
 for unpacked use only needs the public key. Store publishing later can
 generate its own signing identity.
 
+## Prior art check (2026-11-09, after Hadi asked "did you check first?")
+
+The draft was first built from the platform constraint alone; this audit was
+run afterwards against the well-known open implementations, and the concept
+held — with one qualification and one gap found:
+
+- **ExpressVPN browser extension** (source published for review,
+  `expressvpn/expressvpn_browser_extension`): the extension talks to a
+  native helper `com.expressvpn.helper` over **Native Messaging** and sets
+  the browser proxy via a PAC script; on desktop it is explicitly a
+  *remote control* for the native app, which owns the tunnel. **This is
+  exactly our architecture** (our helper launches a userspace proxy-only
+  engine instead of a system VPN, so our coverage is browser-only).
+- **Mullvad browser extension** (open source, `mullvad/browser-extension`,
+  ~319 stars): the extension only sets the browser's **SOCKS5 proxy** and
+  shows status; the Mullvad app owns the WireGuard tunnel. It is
+  **Firefox-only — Mullvad ships no Chromium version at all.** Same split:
+  face + proxy here, tunnel in native code.
+- **Standalone Chromium extensions exist** (Proton VPN, NordVPN): but their
+  model is an **HTTPS proxy to the provider's own servers** — the provider
+  runs the egress infrastructure. There is no user-supplied WireGuard
+  endpoint, so this model cannot serve a stock `.conf` (e.g. eduVPN, which
+  speaks only WireGuard/UDP).
+- **WireGuard in the browser via WASM exists** (Tailscale `tsconnect` /
+  tailcat web demo, NetBird Browser Client, tailcat-rs): wireguard-go /
+  BoringTun compiled to WASM, **relay-only** — packets ride WebSocket to a
+  DERP/relay server because the browser has no UDP, and the relay forwards
+  them onward. This needs relay infrastructure in front of the peer; a
+  stock WireGuard server accepts raw UDP only and cannot be reached this
+  way. These are also in-page clients for specific apps (SSH, RDP, file
+  transfer), not MV3 extensions capturing the browser's own traffic.
+
+Qualification this adds: "impossible" means *an extension alone cannot
+reach a stock WireGuard endpoint directly*. With a WebSocket relay you
+control in the middle, in-browser WireGuard becomes possible — at the cost
+of running relay infrastructure, which this project deliberately avoids.
+
+Gap found by the comparison and fixed in the same pass: commercial
+extensions block **WebRTC leaks** (WebRTC can bypass a SOCKS proxy over
+UDP). The draft now sets
+`chrome.privacy.network.webRTCIPHandlingPolicy = disable_non_proxied_udp`
+while connected and restores the default on disconnect (hence the
+`privacy` permission).
+
 ## Threat notes (draft-level)
 
 - Anyone who can read the bundle folder can read your WireGuard private
