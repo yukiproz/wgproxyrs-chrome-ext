@@ -85,7 +85,7 @@ jobs:
           Endpoint = 127.0.0.1:51820
           AllowedIPs = 10.99.0.0/24
           "@ | Set-Content -Path fixture.conf
-          & $bin --check fixture.conf
+          & $bin --config fixture.conf --check
       - name: Stage the self-contained bundle
         shell: pwsh
         run: |
