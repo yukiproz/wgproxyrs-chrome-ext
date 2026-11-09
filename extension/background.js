@@ -7,16 +7,18 @@
 //
 //   SOCKS5 proxy  127.0.0.1:1080
 //   HTTP proxy    127.0.0.1:1081
-//   Status (JSON) 127.0.0.1:1182  (standing recipe; 1082 also probed)
+//   Status (JSON) 127.0.0.1:1082  (canonical; legacy 1182 also probed)
 //
 // The extension only does three things: set/clear the browser proxy,
 // set/clear the WebRTC leak policy, and poll the status endpoint.
 // Starting/stopping wgproxyrs itself happens in WSL, by the user.
 
 const PORTS = { socks5: 1080, http: 1081 };
-// The status port is probed, not assumed: Hadi's running instances use
-// 1182 (the all-day recipe), an early draft of this extension used 1082.
-const INFO_PORTS = [1182, 1082];
+// The status port is probed, not assumed. Canonical is 1082 (the tidy
+// 1080/1081/1082 sequence Hadi settled on); 1182 is probed as a legacy
+// fallback because Yuki's own earlier example commands used it and
+// instances started from those are still around.
+const INFO_PORTS = [1082, 1182];
 
 async function fetchStatus() {
   for (const port of INFO_PORTS) {
@@ -82,7 +84,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const mode = msg.mode === "http" ? "http" : "socks5";
         const status = await fetchStatus();
         if (status.state === "unreachable") {
-          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL (status port 1182/1082). Start it in WSL first.", status });
+          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL (status port 1082/1182). Start it in WSL first.", status });
           break;
         }
         await setProxy(mode);

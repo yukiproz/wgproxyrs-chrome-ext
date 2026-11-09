@@ -7,9 +7,10 @@ Edge is on Windows, but wgproxyrs already runs in his WSL on the same
 machine, and WSL2 forwards WSL localhost services to Windows localhost.
 So v0.2 deletes the native host from the live path and the extension
 talks to the engine's own ports directly — SOCKS5 1080, HTTP 1081,
-status 1182 (his standing recipe; the extension also probes 1082, a
-port an early draft used, after a live instance on 1182 was reported
-"unreachable" by the 1082-only build). The extension is now only:
+status 1082 (the tidy 1080/1081/1082 sequence; the extension also
+probes legacy 1182, which came from Yuki's own earlier example
+commands — a live instance on 1182 was reported "unreachable" by
+the 1082-only build before the fallback was added). The extension is now only:
 proxy set/clear, WebRTC leak policy, status polling. Engine lifecycle
 and `.conf` management stay in WSL. The v0.1 bundle (PowerShell native
 host, Windows exe, installers) lives in `attic/` for the WSL-less case.
