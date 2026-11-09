@@ -118,7 +118,17 @@ function Invoke-Dispatch($Msg) {
             if (-not (Test-Path -LiteralPath $conf)) { throw "profile not found: $($Msg.name)" }
             $outLog = Join-Path $stateDir 'wgproxyrs.out.log'
             $errLog = Join-Path $stateDir 'wgproxyrs.err.log'
-            $proc = Start-Process -FilePath $bin -ArgumentList @('--config', $conf, '--bind', '127.0.0.1:1080', '--info-bind', '127.0.0.1:1182') -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog -PassThru
+            $startArgs = @{
+                FilePath = $bin
+                ArgumentList = @('--config', $conf, '--bind', '127.0.0.1:1080', '--info-bind', '127.0.0.1:1182')
+                RedirectStandardOutput = $outLog
+                RedirectStandardError = $errLog
+                PassThru = $true
+            }
+            # -WindowStyle exists only on Windows PowerShell; the host also runs
+            # under pwsh on Linux for the CI smoke test.
+            if ($env:OS -eq 'Windows_NT') { $startArgs.WindowStyle = 'Hidden' }
+            $proc = Start-Process @startArgs
             Start-Sleep -Milliseconds 400
             if ($proc.HasExited) { throw "wgproxyrs exited immediately (code $($proc.ExitCode)); see state\wgproxyrs.err.log" }
             $state = [ordered]@{ profile = $Msg.name; pid = $proc.Id }
@@ -141,7 +151,9 @@ function Invoke-Dispatch($Msg) {
             }
             $bin = Find-Binary $root
             if (-not $bin) { return [ordered]@{ ok = $true; state = 'down'; activeProfile = $active.profile } }
-            $probe = Start-Process -FilePath $bin -ArgumentList @('status', '--info', '127.0.0.1:1182') -NoNewWindow -Wait -PassThru
+            $probeArgs = @{ FilePath = $bin; ArgumentList = @('status', '--info', '127.0.0.1:1182'); Wait = $true; PassThru = $true }
+            if ($env:OS -eq 'Windows_NT') { $probeArgs.NoNewWindow = $true }
+            $probe = Start-Process @probeArgs
             $stateName = switch ($probe.ExitCode) { 0 { 'up' } 1 { 'down' } default { 'unreachable' } }
             return [ordered]@{ ok = $true; state = $stateName; activeProfile = $active.profile }
         }
