@@ -1,8 +1,8 @@
 "use strict";
-// Background service worker (v0.2 - WSL localhost edition).
+// Background service worker.
 //
-// wgproxyrs runs in WSL on the same machine. WSL2 exposes services bound to
-// localhost inside WSL as localhost on Windows, so this Edge instance can
+// wgproxyrs runs locally on the same machine, bound to localhost, so this
+// browser can
 // reach the engine directly - no native messaging host, no Windows binary:
 //
 //   SOCKS5 proxy  127.0.0.1:1080
@@ -11,7 +11,7 @@
 //
 // The extension only does three things: set/clear the browser proxy,
 // set/clear the WebRTC leak policy, and poll the status endpoint.
-// Starting/stopping wgproxyrs itself happens in WSL, by the user.
+// Starting/stopping wgproxyrs itself is the user's job, outside the browser.
 
 // All three ports are user-configurable in the popup and persisted in
 // chrome.storage.local. Defaults are the tidy sequence.
@@ -115,7 +115,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const mode = msg.mode === "http" ? "http" : "socks5";
         const status = await fetchStatus();
         if (status.state === "unreachable") {
-          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL on the configured info port. Start it in WSL first, or fix the ports below.", status });
+          sendResponse({ ok: false, error: "wgproxyrs is not reachable on the configured info port. Start it first, or fix the ports below.", status });
           break;
         }
         await setProxy(mode, await getPorts());
@@ -163,7 +163,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
-// On browser startup, if our proxy flag is set but WSL wgproxyrs is gone,
+// On browser startup, if our proxy flag is set but the local wgproxyrs is gone,
 // clear the stale proxy so the browser is not stranded on a dead proxy
 // (wgproxyrs is fail-closed, so this is convenience, not leak protection).
 chrome.runtime.onStartup.addListener(async () => {

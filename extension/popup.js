@@ -47,7 +47,7 @@ function render(state) {
   const box = $("status");
   box.className = "status " + (s.state === "up" ? "up" : s.state === "down" ? "down" : "unreachable");
   $("statusText").textContent =
-    s.state === "unreachable" ? "engine unreachable in WSL" : `tunnel ${s.state}${state.connected ? " · browser connected" : ""}`;
+    s.state === "unreachable" ? "engine unreachable" : `tunnel ${s.state}${state.connected ? " · browser connected" : ""}`;
   if (s.detail && typeof s.detail === "object") {
     const d = s.detail;
     const parts = [];
@@ -74,13 +74,13 @@ $("connectBtn").addEventListener("click", async () => {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   say("connecting…");
   const r = await send({ type: "connect", mode });
-  say(r.ok ? `browser traffic now goes through the WSL tunnel (${mode})` : r.error);
+  say(r.ok ? `browser traffic now goes through the tunnel (${mode})` : r.error);
   await refresh();
 });
 
 $("disconnectBtn").addEventListener("click", async () => {
   const r = await send({ type: "disconnect" });
-  say(r.ok ? "disconnected (wgproxyrs in WSL keeps running)" : r.error);
+  say(r.ok ? "disconnected (the local wgproxyrs keeps running)" : r.error);
   await refresh();
 });
 

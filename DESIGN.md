@@ -1,19 +1,20 @@
 # DESIGN — wgproxyrs browser extension
 
-## v0.2 pivot (2026-11-09): the engine is in WSL, the browser just points at it
+## v0.2 pivot (2026-11-09): the engine runs locally, the browser just points at it
 
-Hadi's setup made v0.1's standalone-Windows machinery unnecessary: his
-Edge is on Windows, but wgproxyrs already runs in his WSL on the same
-machine, and WSL2 forwards WSL localhost services to Windows localhost.
-So v0.2 deletes the native host from the live path and the extension
-talks to the engine's own ports directly — SOCKS5 1080, HTTP 1081,
-status 1082 (the tidy 1080/1081/1082 sequence; the extension also
-probes legacy 1182, which came from Yuki's own earlier example
-commands — a live instance on 1182 was reported "unreachable" by
-the 1082-only build before the fallback was added). The extension is now only:
-proxy set/clear, WebRTC leak policy, status polling. Engine lifecycle
-and `.conf` management stay in WSL. The v0.1 bundle (PowerShell native
-host, Windows exe, installers) lives in `attic/` for the WSL-less case.
+The v0.1 machinery (a native helper app owning the engine) turned out
+to be unnecessary: wgproxyrs already runs locally on the same machine
+as the browser, bound to localhost, so the extension can talk to the
+engine's own ports directly. v0.2 deletes the native host from the
+live path — default ports SOCKS5 1080, HTTP 1081, status 1082 (the
+tidy 1080/1081/1082 sequence, all user-configurable in the popup since
+v0.3; the probe also tries legacy 1182, which came from earlier
+example commands — a live instance on 1182 was reported "unreachable"
+by the 1082-only build before the fallback was added). The extension
+is now only: proxy set/clear, WebRTC leak policy, status polling.
+Engine lifecycle and `.conf` management stay with the engine. The
+v0.1 bundle (PowerShell native host, Windows exe, installers) lives
+in `attic/` for the case where the engine cannot run locally.
 Everything below is the v0.1 design record and the prior-art audit,
 kept because the platform reasoning still stands.
 
@@ -90,8 +91,8 @@ held — with one qualification and one gap found:
   an MCP server + Chromium extension where the extension talks to a local
   **relay binary over a localhost port**, paired once with a per-browser
   key. The relay installs on Windows via a one-line PowerShell installer
-  or in WSL/Linux via bash, and the extension (Chrome/Edge/Brave/…)
-  connects across the WSL/Windows boundary through localhost. This is
+  or on Linux via bash, and the extension (Chrome/Edge/Brave/…)
+  connects to it through localhost. This is
   the v0.2 shape exactly — local engine, extension as its face — plus a
   distribution and pairing polish worth stealing later if this draft
   grows: one-line installer, automatic relay updates, pairing keys for
