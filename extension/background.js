@@ -7,29 +7,34 @@
 //
 //   SOCKS5 proxy  127.0.0.1:1080
 //   HTTP proxy    127.0.0.1:1081
-//   Status (JSON) 127.0.0.1:1082
+//   Status (JSON) 127.0.0.1:1182  (standing recipe; 1082 also probed)
 //
 // The extension only does three things: set/clear the browser proxy,
 // set/clear the WebRTC leak policy, and poll the status endpoint.
 // Starting/stopping wgproxyrs itself happens in WSL, by the user.
 
-const PORTS = { socks5: 1080, http: 1081, info: 1082 };
-const INFO_URL = `http://127.0.0.1:${PORTS.info}/`;
+const PORTS = { socks5: 1080, http: 1081 };
+// The status port is probed, not assumed: Hadi's running instances use
+// 1182 (the all-day recipe), an early draft of this extension used 1082.
+const INFO_PORTS = [1182, 1082];
 
 async function fetchStatus() {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 1500);
-  try {
-    const res = await fetch(INFO_URL, { cache: "no-store", signal: ctrl.signal });
-    if (!res.ok) return { ok: true, state: "unreachable", detail: `HTTP ${res.status}` };
-    const body = await res.json().catch(() => ({}));
-    const state = body.status || body.state || "unknown";
-    return { ok: true, state, detail: body };
-  } catch (_e) {
-    return { ok: true, state: "unreachable", detail: "wgproxyrs not reachable on 127.0.0.1:" + PORTS.info };
-  } finally {
-    clearTimeout(timer);
+  for (const port of INFO_PORTS) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1200);
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/`, { cache: "no-store", signal: ctrl.signal });
+      if (!res.ok) continue;
+      const body = await res.json().catch(() => ({}));
+      const state = body.status || body.state || "unknown";
+      return { ok: true, state, detail: body, infoPort: port };
+    } catch (_e) {
+      // try the next candidate port
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return { ok: true, state: "unreachable", detail: `wgproxyrs not reachable on 127.0.0.1:${INFO_PORTS.join(" or ")}` };
 }
 
 function setProxy(mode) {
@@ -77,7 +82,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const mode = msg.mode === "http" ? "http" : "socks5";
         const status = await fetchStatus();
         if (status.state === "unreachable") {
-          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL (status port 1082). Start it in WSL first.", status });
+          sendResponse({ ok: false, error: "wgproxyrs is not reachable in WSL (status port 1182/1082). Start it in WSL first.", status });
           break;
         }
         await setProxy(mode);

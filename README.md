@@ -19,13 +19,13 @@ Edge (Windows)                              WSL
 │ extension                   │  proxy     │ wgproxyrs                │
 │  - Connect: set proxy ──────┼──127.0.0.1:1080 (SOCKS5)           │
 │                             ├──127.0.0.1:1081 (HTTP CONNECT)     │
-│  - Status: GET / ───────────┼──127.0.0.1:1082 (health JSON)      │
+│  - Status: GET / ───────────┼──127.0.0.1:1182 (health JSON)      │
 │  - WebRTC leak policy on    │            │   tunnel to your .conf   │
 └─────────────────────────────┘            └──────────────────────────┘
 ```
 
 Ports are the standing convention on Hadi's machine: SOCKS5 **1080**,
-HTTP **1081**, status **1082**.
+HTTP **1081**, status **1182**.
 
 ## Use
 
@@ -33,7 +33,7 @@ HTTP **1081**, status **1082**.
    multi-profile just means running the instance you want):
 
    ```bash
-   wgproxyrs --config uner.conf --bind 127.0.0.1:1080 --http-bind 127.0.0.1:1081 --info-bind 127.0.0.1:1082
+   wgproxyrs --config uner.conf --bind 127.0.0.1:1080 --http-bind 127.0.0.1:1081 --info-bind 127.0.0.1:1182
    ```
 
 2. In Edge: `edge://extensions` → Developer mode → **Load unpacked** →

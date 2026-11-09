@@ -21,8 +21,11 @@ function render(state) {
   if (s.detail && typeof s.detail === "object") {
     const d = s.detail;
     const parts = [];
-    if (d.handshake_age_secs !== undefined) parts.push(`handshake ${d.handshake_age_secs}s ago`);
-    if (d.peers) parts.push(`${Array.isArray(d.peers) ? d.peers.length : d.peers} peer(s)`);
+    if (d.endpoint) parts.push(d.endpoint);
+    if (d.handshake_age_secs !== undefined && d.handshake_age_secs !== null) parts.push(`handshake ${d.handshake_age_secs}s ago`);
+    const peers = d.per_peer || d.peers;
+    if (peers) parts.push(`${Array.isArray(peers) ? peers.length : peers} peer(s)`);
+    if (state.status && state.status.infoPort) parts.push(`info :${state.status.infoPort}`);
     $("detail").textContent = parts.join(" · ");
   } else {
     $("detail").textContent = s.detail || "";
