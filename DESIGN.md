@@ -83,6 +83,16 @@ The draft was first built from the platform constraint alone; this audit was
 run afterwards against the well-known open implementations, and the concept
 held — with one qualification and one gap found:
 
+- **anomalyco/browse** (open source, ~371 stars, pointed out by Hadi):
+  an MCP server + Chromium extension where the extension talks to a local
+  **relay binary over a localhost port**, paired once with a per-browser
+  key. The relay installs on Windows via a one-line PowerShell installer
+  or in WSL/Linux via bash, and the extension (Chrome/Edge/Brave/…)
+  connects across the WSL/Windows boundary through localhost. This is
+  the v0.2 shape exactly — local engine, extension as its face — plus a
+  distribution and pairing polish worth stealing later if this draft
+  grows: one-line installer, automatic relay updates, pairing keys for
+  the local service.
 - **ExpressVPN browser extension** (source published for review,
   `expressvpn/expressvpn_browser_extension`): the extension talks to a
   native helper `com.expressvpn.helper` over **Native Messaging** and sets
